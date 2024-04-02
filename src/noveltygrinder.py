@@ -135,6 +135,25 @@ Annotated PGN is written in stdout.''')
         action="callback",
         callback=enable_debug_logging)
 
+    parser.add_option(
+        "", "--double-check-nodes", dest="doubleCheckNodes",
+        help="After initial analysis, do focused analysis on candidate moves until they have at least NUM nodes. " +
+        "This improves quality of suggested alternative moves. Default (-1) stands for 10% of NODES as specified with --nodes. " +
+        "[default: %default]",
+        type="int",
+        metavar="NUM",
+        default=-1)
+
+    parser.add_option(
+        "",  "--initial-eval-margin", dest="initialEvalMarginCp",
+        help="Extra margin for initial analysis score threshold. In centipawns. " +
+        "The extra margin allows considering moves that have lower score with low node count but "
+        "improved score with more nodes. "
+        "[default: %default]",
+        type="int",
+        metavar="EVAL_DIFF",
+        default=300)
+
     (options, args) = parser.parse_args()
 
     if options.engine and options.whiteEngine:
@@ -151,6 +170,9 @@ Annotated PGN is written in stdout.''')
 
     if len(args) == 0:
         parser.error('No input PGN was specified')
+
+    if options.doubleCheckNodes == -1:
+        options.doubleCheckNodes = -(options.analysisNodes // -10) # ceiling division
 
     return (options, args)
 
@@ -183,8 +205,11 @@ def initializeSingleEngine(exePath, conf):
                 # regardless of whether the top move has been decided
                 'SmartPruningFactor' : 0,
 
-                 # Expected score output. Range is 0..10000 for 0..100%
-                'ScoreType' : 'win_percentage'
+                # Expected score output. Range is 0..10000 for 0..100%
+                'ScoreType' : 'win_percentage',
+
+                # For per-PV number of nodes
+                'PerPVCounters' : True
             })
 
         engine.ping()
@@ -240,9 +265,10 @@ def scoreToString(cp, turn):
 
 
 class AnalysisMoveInfo:
-    def __init__(self, move, evalCp):
+    def __init__(self, move, evalCp, nodes):
         self.move = move
         self.evalCp = evalCp
+        self.nodes = nodes
         self.freq = 0
         self.novelty = True
 
@@ -268,19 +294,50 @@ def engineAnalysis(board, game, engine, options):
             analysisMoves.append(
                 AnalysisMoveInfo(
                     i['pv'][0],
-                    i['score'].relative.score(mate_score=1000000)))
+                    i['score'].relative.score(mate_score=1000000),
+                    i['nodes']))
 
     # engine produced any moves?
     if len(analysisMoves) == 0:
-        return [ ]
+        return [ ], 0
 
-    # filter out moves that don't have big enough score
+    # determine threshold for candidate moves
     evalThresholdCp = analysisMoves[0].evalCp - options.evalThresholdCp
 
+    return analysisMoves, evalThresholdCp
+
+# remove moves that don't have big enough score
+def pruneWeakMoves(analysisMoves, evalThresholdCp):
     ret = [ ]
     for am in analysisMoves:
         if am.evalCp >= evalThresholdCp:
             ret.append(am)
+
+    return ret
+
+
+def engineAnalysisDoubleCheck(board, game, engine, options, analysisMoves):
+    tempOptions = dict()
+    tempOptions['PerPVCounters'] = False
+    ret = [ ]
+
+    for am in analysisMoves:
+        # query the total moves so far
+        info = engine.analyse(
+            board, chess.engine.Limit(nodes=0), game = game, multipv = 100, root_moves = [ am.move ], options = tempOptions)
+        totalNodes = info[0]['nodes']
+
+        # need more nodes?
+        if am.nodes < options.doubleCheckNodes:
+            newNodes = options.doubleCheckNodes - am.nodes
+
+            info = engine.analyse(
+                board, chess.engine.Limit(nodes=(totalNodes + newNodes)), game = game, multipv = 100, root_moves = [ am.move ])
+            am.move = info[0]['pv'][0]
+            am.nodes = info[0]['nodes']
+            am.evalCp = info[0]['score'].relative.score(mate_score=1000000)
+
+        ret.append(am)
 
     return ret
 
@@ -324,6 +381,14 @@ def filterOutPopularMovesAddFreq(analysisMoves, openingStats, gamesThreshold, to
     return ret
 
 
+def analysisMoveListToString(analysisMoves, board):
+    moveStrList = [ ]
+    for am in analysisMoves:
+        moveStrList.append(board.san(am.move))
+
+    return " ".join(moveStrList)
+
+
 def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
     sys.stderr.write(f"Analyzing game {num}\n")
 
@@ -363,10 +428,17 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
         if (not skip) and (engine is not None):
             sys.stderr.write(f"- move {currentMoveNumStr(node.board())}\n")
 
-            analysisMoves = engineAnalysis(node.board(), game, engine, options)
+            analysisMoves, evalThresholdCp = engineAnalysis(node.board(), game, engine, options)
+
+            # filter out moves that don't have big enough score
+            analysisMoves = pruneWeakMoves(
+                analysisMoves,
+                evalThresholdCp - options.initialEvalMarginCp)
 
             if len(analysisMoves) > 0:
                 retNode.comment = f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
+
+            sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, node.board())}\n")
 
             analysisMoves = filterOutVariations(analysisMoves, node)
 
@@ -389,6 +461,16 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
 
             # go through reported book moves, filter out popular moves
             analysisMoves = filterOutPopularMovesAddFreq(analysisMoves, openingStats, gamesThreshold, totalGames)
+
+            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, node.board())}\n")
+
+            # double-check the suggestions
+            analysisMoves = engineAnalysisDoubleCheck(node.board(), game, engine, options, analysisMoves)
+
+            # filter out moves that don't have big enough score
+            analysisMoves = pruneWeakMoves(analysisMoves, evalThresholdCp)
+
+            sys.stderr.write(f"  - moves after final analysis: {analysisMoveListToString(analysisMoves, node.board())}\n")
 
             # PGN arrow strings sets
             unpopularArrowStrings = set()
