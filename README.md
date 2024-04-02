@@ -33,8 +33,8 @@ Prerequisites
   highly recommended for Lc0 configuration.
 
 Configuration
--# Run `setup-python-venv.sh`. This creates a Python virtual
-   environment and fetches dependencies
+- Run `setup-python-venv.sh`. This creates a Python virtual
+  environment and fetches dependencies
 
 
 Running
