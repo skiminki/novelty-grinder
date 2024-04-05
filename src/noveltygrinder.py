@@ -61,18 +61,21 @@ Annotated PGN is written in stdout.''')
 
     parser.add_option(
         "-w", "--white-engine", dest="whiteEngine",
-        help="Engine for white side analysis",
+        help="Engine for white side analysis. Full path can be omitted as long as " +
+        "the engine is unambiguous.",
         type="string",
         metavar="STR")
 
     parser.add_option(
         "-b", "--black-engine", dest="blackEngine",
-        help="Engine for black side analysis",
+        help="Engine for black side analysis. Full path can be omitted as long as " +
+        "the engine is unambiguous.",
         metavar="STR")
 
     parser.add_option(
         "-e", "--engine", dest="engine",
-        help="Analysis engine for both sides.",
+        help="Analysis engine for both sides. Full path can be omitted as long as " +
+        "the engine is unambiguous.",
         type="string",
         metavar="STR")
 
@@ -223,6 +226,26 @@ def initializeSingleEngine(exePath, conf):
     return engine
 
 
+def getEngineConf(engineConfigs, engineName):
+    if engineName in engineConfigs:
+        return engineConfigs[engineName]
+
+    fullName = None
+
+    for i in engineConfigs:
+        enginePath = Path(i)
+        if engineName == enginePath.name:
+            if fullName is not None:
+                raise KeyError(f"Ambiguous engine name '{engineName}' can resolve to '{fullName}' or '{i}'")
+
+            fullName = i
+
+    if fullName is None:
+        raise KeyError(f"Engine not found: '{engineName}'")
+
+    return engineConfigs[fullName]
+
+
 def initializeEngines(options):
 
     whiteEngine = None
@@ -232,16 +255,16 @@ def initializeEngines(options):
         engineConfigs = json.load(f)
 
     if options.engine:
-        conf = engineConfigs[options.engine]
+        conf = getEngineConf(engineConfigs, options.engine)
         whiteEngine = initializeSingleEngine(options.engine, conf)
         blackEngine = whiteEngine
 
     if options.whiteEngine:
-        conf = engineConfigs[options.whiteEngine]
+        conf = getEngineConf(engineConfigs, options.whiteEngine)
         whiteEngine = initializeSingleEngine(options.whiteEngine, conf)
 
     if options.blackEngine:
-        conf = engineConfigs[options.blackEngine]
+        conf = getEngineConf(engineConfigs, options.blackEngine)
         blackEngine = initializeSingleEngine(options.blackEngine, conf)
 
     return whiteEngine, blackEngine

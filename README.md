@@ -44,14 +44,15 @@ Run `./novelty-grinder` without parameters for the built-in help.
 
 For example:
 
-    ./novelty-grinder --engine=/usr/local/bin/lc0 --nodes=100000 --eval-threshold=100 --arrows --first-move=4 --book-cutoff=40 input-games.pgn | tee annotated-games.pgn
+    ./novelty-grinder --engine=lc0 --nodes=100000 --eval-threshold=100 --arrows --first-move=4 --book-cutoff=40 input-games.pgn | tee annotated-games.pgn
 
-This command uses engine `/usr/local/bin/lc0` to analyze the game:
-- Initial search is 100 kN per move, starting from move 4
+This command uses engine `lc0` to analyze the game:
+- The full path in engines.json can be omitted.
+- Initial search is 100 kN per move, starting from move 4.
 - Moves less than 4% from the top move are considered *initial candidate*
   moves. That's 1% plus the default 3% initial margin.
 - Default popularity cutoff is used. That is, moves with at most 5%
-  popularity are considered for surprises
+  popularity are considered for surprises.
 - Unpopular alternative moves and novelties are analyzed further until
   they have at least 10 kN each. Suggested moves are those that
   are less than 1% from the top move.
