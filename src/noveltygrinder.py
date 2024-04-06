@@ -465,8 +465,9 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
         info = None
         engine = None
         skip = stopAnalysis
+        curBoard = node.board()
 
-        if node.board().fullmove_number < options.firstMove:
+        if curBoard.fullmove_number < options.firstMove:
             skip = True
 
         if node.turn() == chess.WHITE:
@@ -475,9 +476,9 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
             engine = blackEngine
 
         if (not skip) and (engine is not None):
-            sys.stderr.write(f"- move {currentMoveNumStr(node.board())}\n")
+            sys.stderr.write(f"- move {currentMoveNumStr(curBoard)}\n")
 
-            analysisMoves, evalThresholdCp = engineAnalysis(node.board(), game, engine, options)
+            analysisMoves, evalThresholdCp = engineAnalysis(curBoard, game, engine, options)
 
             # filter out moves that don't have big enough score
             analysisMoves = pruneWeakMoves(
@@ -487,12 +488,12 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
             if len(analysisMoves) > 0:
                 retNode.comment = f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
 
-            sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, node.board())}\n")
+            sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
             analysisMoves = filterOutVariations(analysisMoves, node)
 
             # do a lichess query on the position
-            fen = node.board().fen()
+            fen = curBoard.fen()
             openingStats = openingExplorer.get_masters_games(fen, top_games=0, moves=30)
 
             # compute book opening thresholds
@@ -511,15 +512,15 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
             # go through reported book moves, filter out popular moves
             analysisMoves = filterOutPopularMovesAddFreq(analysisMoves, openingStats, gamesThreshold, totalGames)
 
-            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, node.board())}\n")
+            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
             # double-check the suggestions
-            analysisMoves = engineAnalysisDoubleCheck(node.board(), game, engine, options, analysisMoves)
+            analysisMoves = engineAnalysisDoubleCheck(curBoard, game, engine, options, analysisMoves)
 
             # filter out moves that don't have big enough score
             analysisMoves = pruneWeakMoves(analysisMoves, evalThresholdCp)
 
-            sys.stderr.write(f"  - moves after final analysis: {analysisMoveListToString(analysisMoves, node.board())}\n")
+            sys.stderr.write(f"  - moves after final analysis: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
             # PGN arrow strings sets
             unpopularArrowStrings = set()
@@ -544,8 +545,8 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
                     nags = nags)
 
                 summary.addSurpriseMove(
-                    node.board().ply(),
-                    node.board().san(m.move),
+                    curBoard.ply(),
+                    curBoard.san(m.move),
                     m.freq,
                     m.novelty)
 
