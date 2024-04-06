@@ -25,6 +25,7 @@ import datetime
 import json
 import logging
 import sys
+import traceback
 
 VERSION="0.1-dev"
 
@@ -629,7 +630,7 @@ def main():
         closeEngines(whiteEngine, blackEngine)
 
     except Exception as ex:
-        sys.stderr.write(f"Error: {ex}\n")
+        sys.stderr.write(f"Error: {traceback.format_exc()}\n")
         closeEngines(whiteEngine, blackEngine)
 
 
