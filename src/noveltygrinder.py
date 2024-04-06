@@ -157,6 +157,11 @@ Annotated PGN is written in stdout.''')
         metavar="EVAL_DIFF",
         default=300)
 
+    parser.add_option(
+        "",  "--summary", dest="summary", default=False,
+        help="Produce a summary of potential surprise moves.",
+        action="store_true")
+
     (options, args) = parser.parse_args()
 
     if options.engine and options.whiteEngine:
@@ -296,6 +301,21 @@ class AnalysisMoveInfo:
         self.novelty = True
 
 
+class AnalysisSummary:
+    def __init__(self):
+        self.surpriseMoves = dict()
+        self.analyzedLineStr = ""
+
+    def addSurpriseMove(self, ply, moveStr, freq, novelty):
+        if ply not in self.surpriseMoves:
+            self.surpriseMoves[ply] = list()
+
+        if novelty:
+            self.surpriseMoves[ply].append(moveStr + 'N')
+        else:
+            self.surpriseMoves[ply].append(f"{moveStr} Popularity={100 * freq:.2f}%")
+
+
 def currentMoveNumStr(board):
     if board.turn == chess.WHITE:
         return str(board.fullmove_number) + "w"
@@ -419,13 +439,17 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
     ret.headers = game.headers.copy()
 
     annotatorParts = [ "Novelty Grinder " + VERSION ]
+    summaryAnnotatorParts = ""
     if options.engine:
         annotatorParts.append("White: " + options.engine)
         annotatorParts.append("Black: " + options.engine)
+        summaryAnnotator = options.engine
     if options.whiteEngine:
         annotatorParts.append("White: " + options.whiteEngine)
+        summaryAnnotator = options.whiteEngine
     if options.blackEngine:
         annotatorParts.append("Black: " + options.blackEngine)
+        summaryAnnotator = options.blackEngine
     annotatorParts.append("Lichess Masters DB")
     annotatorParts.append(datetime.datetime.today().strftime('%Y-%m-%d'))
 
@@ -434,6 +458,8 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
     node = game
     retNode = ret
     stopAnalysis = False
+
+    summary = AnalysisSummary()
 
     while True:
         info = None
@@ -517,6 +543,12 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
                     comment = comment,
                     nags = nags)
 
+                summary.addSurpriseMove(
+                    node.board().ply(),
+                    node.board().san(m.move),
+                    m.freq,
+                    m.novelty)
+
             # Add the arrow strings. Note: we'll add the arrows for
             # unpopular moves before novelties. Some GUIs (e.g.,
             # chessx) draw the arrows in order, and we want to
@@ -531,12 +563,35 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
         if (len(node.variations) > 0):
             node = node.variations[0]
             retNode = retNode.add_main_variation(move=node.move)
+            if not skip:
+                summary.analyzedLineStr = ret.board().variation_san(ret.mainline_moves())
         else:
             node = None
             break
 
     print(str(ret) + "\n")
     sys.stdout.flush()
+
+    if options.summary:
+        sys.stderr.write("==================================\n")
+        sys.stderr.write("Summary:\n\n")
+        sys.stderr.write(f"Engine: {summaryAnnotator}\n")
+        sys.stderr.write(f"Round {game.headers['Round']}: {game.headers['White']} - {game.headers['Black']}\n\n")
+        sys.stderr.write(f"{summary.analyzedLineStr}\n")
+
+        for ply in summary.surpriseMoves:
+            sys.stderr.write("\n")
+
+            moveNumStr = str(1 + (ply // 2))
+            if ply % 2 == 0:
+                moveNumStr = moveNumStr + "."
+            else:
+                moveNumStr = moveNumStr + "..."
+
+            for moveDesc in summary.surpriseMoves[ply]:
+                sys.stderr.write(f"{moveNumStr} {moveDesc}\n")
+
+        sys.stderr.write("\n==================================\n")
 
 
 def main():
