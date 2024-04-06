@@ -398,22 +398,24 @@ def filterOutVariations(analysisMoves, node):
 
 
 # filter out popular moves and add frequency/novelty info
-def filterOutPopularMovesAddFreq(analysisMoves, openingStats, gamesThreshold, totalGames):
+def filterOutPopularMovesAddFreq(curBoard : chess.Board, analysisMoves, openingStats, gamesThreshold, totalGames):
 
     ret = [ ]
     uciStrToNumGames = dict()
 
     # create lookup dict
     for statMove in openingStats['moves']:
-        uciStrToNumGames[statMove['uci']] = (
+        normalizedBookMove = curBoard.san(chess.Move.from_uci(statMove['uci']))
+        uciStrToNumGames[normalizedBookMove] = (
             statMove['white'] + statMove['draws'] + statMove['black'] )
 
     for am in analysisMoves:
         # check for novelty?
-        if am.move.uci() in uciStrToNumGames:
+        normalizedEngineMove = curBoard.san(am.move)
+        if normalizedEngineMove in uciStrToNumGames:
             # not a novelty
-            if uciStrToNumGames[am.move.uci()] <= gamesThreshold:
-                am.freq = uciStrToNumGames[am.move.uci()] / totalGames
+            if uciStrToNumGames[normalizedEngineMove] <= gamesThreshold:
+                am.freq = uciStrToNumGames[normalizedEngineMove] / totalGames
                 am.novelty = False
                 ret.append(am)
         else:
@@ -511,7 +513,7 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
             retNode.comment = retNode.comment + " N=" + str(totalGames)
 
             # go through reported book moves, filter out popular moves
-            analysisMoves = filterOutPopularMovesAddFreq(analysisMoves, openingStats, gamesThreshold, totalGames)
+            analysisMoves = filterOutPopularMovesAddFreq(curBoard, analysisMoves, openingStats, gamesThreshold, totalGames)
 
             sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
