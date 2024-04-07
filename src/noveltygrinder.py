@@ -15,12 +15,15 @@
 # limitations under the License.
 
 
+from enum import Enum
 from optparse import OptionParser
 from pathlib import Path
+from typing import Iterable
 import berserk
 import chess
 import chess.engine
 import chess.pgn
+import chess.svg
 import datetime
 import json
 import logging
@@ -163,6 +166,14 @@ Annotated PGN is written in stdout.''')
         help="Produce a summary of potential surprise moves.",
         action="store_true")
 
+    parser.add_option(
+        "",  "--diagrams", dest="diagramPattern", default=None,
+        help="Produce diagrams from positions where moves were found. In PATTERN, '{}' " +
+        "is replaced with move number and side to move. For example: `--diagrams=ANALYZED-{}.svg`. " +
+        "Formats supported: svg",
+        type="string",
+        metavar="PATTERN")
+
     (options, args) = parser.parse_args()
 
     if options.engine and options.whiteEngine:
@@ -183,7 +194,29 @@ Annotated PGN is written in stdout.''')
     if options.doubleCheckNodes == -1:
         options.doubleCheckNodes = -(options.analysisNodes // -10) # ceiling division
 
+    # check that diagram pattern is parseable
+    if options.diagramPattern is not None:
+        parseDiagramPattern(options.diagramPattern)
+
     return (options, args)
+
+
+class DiagramFormat(Enum):
+    SVG = 1
+
+
+def parseDiagramPattern(pattern : str) -> (str, DiagramFormat):
+    # check that we have the movenum+color substitution
+    if '{}' not in pattern:
+        raise ValueError('Bad diagram pattern (missing {})')
+
+    # determine format
+    suffix = pattern.upper().split('.')[-1]
+
+    if suffix not in ('SVG'):
+        raise ValueError(f"Bad diagram format: {suffix}")
+
+    return pattern, DiagramFormat[suffix]
 
 
 def closeSingleEngine(engine):
@@ -427,6 +460,52 @@ def filterOutPopularMovesAddFreq(curBoard : chess.Board, analysisMoves, openingS
     return ret
 
 
+def writeDiagram(diagramPattern : str, curNode : chess.pgn.GameNode, analysisMoves : Iterable[AnalysisMoveInfo]):
+    curBoard = curNode.board()
+
+    pattern, fmt = parseDiagramPattern(diagramPattern)
+    fileName = pattern.replace('{}', currentMoveNumStr(curBoard).rjust(3, '0'), 1)
+
+    sys.stderr.write(f"- writing diagram file: {fileName}\n")
+
+    unpopularArrows : list[chess.svg.Arrow] = list()
+    noveltyArrows : list[chess.svg.Arrow] = list()
+
+    for am in analysisMoves:
+        if am.novelty:
+            noveltyArrows.append(
+                chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#ff0000c0"))
+        else:
+            unpopularArrows.append(
+                chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#00ff00c0"))
+
+    allArrows : list[chess.svg.Arrow] = list()
+
+    if (curNode.move):
+        allArrows.append(
+            chess.svg.Arrow(curNode.move.from_square, curNode.move.to_square, color="#2020b060")
+        )
+
+    if (len(curNode.variations) > 0):
+        nextNode = curNode.variations[0]
+        allArrows.append(
+            chess.svg.Arrow(nextNode.move.from_square, nextNode.move.to_square, color="#40404060")
+        )
+
+    allArrows.extend(unpopularArrows)
+    allArrows.extend(noveltyArrows)
+
+    outputDiagram = chess.svg.board(
+        curBoard,
+        arrows=allArrows,
+        orientation=curBoard.turn,
+        size=480
+    )
+
+    with open(fileName, "w") as svgFile:
+        svgFile.write(outputDiagram)
+
+
 def analysisMoveListToString(analysisMoves, board):
     moveStrList = [ ]
     for am in analysisMoves:
@@ -562,6 +641,9 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
                 arrowStrings += unpopularArrowStrings
                 arrowStrings += noveltyArrowStrings
                 retNode.comment = retNode.comment + " [%cal " + ",".join(arrowStrings) + "]"
+
+            if (len(analysisMoves) > 0) and options.diagramPattern:
+                writeDiagram(options.diagramPattern, node, analysisMoves)
 
         # next mainline move
         if (len(node.variations) > 0):
