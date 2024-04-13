@@ -165,6 +165,11 @@ Annotated PGN is written in stdout.''')
         default=300)
 
     parser.add_option(
+        "",  "--include-input", dest="includeInput", default=False,
+        help="Include input moves in analysis.",
+        action="store_true")
+
+    parser.add_option(
         "",  "--summary", dest="summary", default=False,
         help="Produce a summary of potential surprise moves.",
         action="store_true")
@@ -336,6 +341,9 @@ class AnalysisMoveInfo:
         self.nodes = nodes
         self.freq = 0
         self.novelty = True
+        self.inputMove = False
+        self.strongMove = True
+        self.unpopularMove = True
 
 
 class AnalysisSummaryBookStats:
@@ -352,14 +360,21 @@ class AnalysisSummary:
     def addBookStats(self, ply : int, stats : AnalysisSummaryBookStats):
         self.bookStats[ply] = stats
 
-    def addSurpriseMove(self, ply, moveStr, freq, novelty):
+    def addSurpriseMove(self, ply, moveStr, freq, novelty, inputMove):
         if ply not in self.surpriseMoves:
             self.surpriseMoves[ply] = list()
 
+        summaryStr = moveStr
+
+        if inputMove:
+            summaryStr += '!'
+
         if novelty:
-            self.surpriseMoves[ply].append(moveStr + 'N')
+            summaryStr += 'N'
         else:
-            self.surpriseMoves[ply].append(f"{moveStr} Popularity={100 * freq:.2f}%")
+            summaryStr += f" Popularity={100 * freq:.2f}%"
+
+        self.surpriseMoves[ply].append(summaryStr)
 
 
 def currentMoveNumStr(board):
@@ -395,11 +410,39 @@ def engineAnalysis(board, game, engine, options):
 
     return analysisMoves, evalThresholdCp
 
-# remove moves that don't have big enough score
+
+def forceAddInputMoves(analysisMoves, node, curBoard):
+    ret = [ ]
+    for v in node.variations:
+        am = AnalysisMoveInfo(
+                v.move,
+                0,
+                0)
+        am.inputMove = True
+        ret.append(am)
+    numInputs = len(ret)
+
+    for am in analysisMoves:
+        doAppend = True
+        for i in range(0, numInputs):
+            if curBoard.san(ret[i].move) == curBoard.san(am.move):
+                ret[i] = am
+                am.inputMove = True
+                doAppend = False
+
+        if doAppend:
+            ret.append(am)
+
+    return ret
+
+
+# remove non-input moves that don't have big enough score
 def pruneWeakMoves(analysisMoves, evalThresholdCp):
     ret = [ ]
     for am in analysisMoves:
-        if am.evalCp >= evalThresholdCp:
+        am.strongMove = (am.evalCp >= evalThresholdCp)
+
+        if am.strongMove or am.inputMove:
             ret.append(am)
 
     return ret
@@ -457,9 +500,12 @@ def filterOutPopularMovesAddFreq(curBoard : chess.Board, analysisMoves, openingS
     for am in analysisMoves:
         # check for novelty?
         normalizedEngineMove = curBoard.san(am.move)
+
         if normalizedEngineMove in uciStrToNumGames:
             # not a novelty
-            if uciStrToNumGames[normalizedEngineMove] <= gamesThreshold:
+            am.unpopularMove = uciStrToNumGames[normalizedEngineMove] <= gamesThreshold
+
+            if am.unpopularMove or am.inputMove:
                 am.freq = uciStrToNumGames[normalizedEngineMove] / totalGames
                 am.novelty = False
                 ret.append(am)
@@ -467,6 +513,7 @@ def filterOutPopularMovesAddFreq(curBoard : chess.Board, analysisMoves, openingS
             # novelty
             am.freq = 0
             am.novelty = True
+            am.unpopularMove = True
             ret.append(am)
 
     return ret
@@ -521,7 +568,24 @@ def writeDiagram(diagramPattern : str, curNode : chess.pgn.GameNode, analysisMov
 def analysisMoveListToString(analysisMoves, board):
     moveStrList = [ ]
     for am in analysisMoves:
-        moveStrList.append(board.san(am.move))
+        moveStr = board.san(am.move)
+
+        # debugging for move classification
+        if False:
+            moveStr += '['
+
+            if am.inputMove:
+                moveStr += 'I'
+
+            if am.strongMove:
+                moveStr += 'S'
+
+            if am.unpopularMove:
+                moveStr += 'U'
+
+            moveStr += ']'
+
+        moveStrList.append(moveStr)
 
     return " ".join(moveStrList)
 
@@ -590,17 +654,26 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
 
             analysisMoves, evalThresholdCp = engineAnalysis(curBoard, game, engine, options)
 
+            if options.includeInput:
+                analysisMoves = forceAddInputMoves(analysisMoves, node, curBoard)
+
             # filter out moves that don't have big enough score
             analysisMoves = pruneWeakMoves(
                 analysisMoves,
                 evalThresholdCp - options.initialEvalMarginCp)
 
             if len(analysisMoves) > 0:
-                retNode.comment = f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
+                if retNode.comment:
+                    retNode.comment += '; '
+                else:
+                    retNode.comment = ''
+
+                retNode.comment += f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
 
             sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
-            analysisMoves = filterOutVariations(analysisMoves, node)
+            if not options.includeInput:
+                analysisMoves = filterOutVariations(analysisMoves, node)
 
             # do a lichess query on the position
             fen = curBoard.fen()
@@ -642,6 +715,7 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
             noveltyArrowStrings = set()
 
             # Add variations from unpopular engine-approved moves
+            enableDiagram = False
             for m in analysisMoves:
                 comment = f"Eval={scoreToString(m.evalCp, node.turn())}"
                 nags = set()
@@ -649,21 +723,29 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
                     # Note: 146 is numeric annotation glyph for novelty
                     # See https://en.wikipedia.org/wiki/Numeric_Annotation_Glyphs
                     nags.add(146)
-                    noveltyArrowStrings.add(f"R{m.move.uci()}")
+                    if m.strongMove:
+                        noveltyArrowStrings.add(f"R{m.move.uci()}")
                 else:
                     comment = comment + f" Popularity={m.freq * 100:.2f}%"
-                    unpopularArrowStrings.add(f"G{m.move.uci()}")
+                    if m.unpopularMove and m.strongMove:
+                        unpopularArrowStrings.add(f"G{m.move.uci()}")
+
+                if m.inputMove and m.unpopularMove and m.strongMove:
+                    nags.add(1)  # add '!'
 
                 retNode.add_variation(
                     m.move,
                     comment = comment,
                     nags = nags)
 
-                summary.addSurpriseMove(
-                    curBoard.ply(),
-                    curBoard.san(m.move),
-                    m.freq,
-                    m.novelty)
+                if m.unpopularMove and m.strongMove:
+                    enableDiagram = True
+                    summary.addSurpriseMove(
+                        curBoard.ply(),
+                        curBoard.san(m.move),
+                        m.freq,
+                        m.novelty,
+                        m.inputMove)
 
             # Add the arrow strings. Note: we'll add the arrows for
             # unpopular moves before novelties. Some GUIs (e.g.,
@@ -675,13 +757,19 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
                 arrowStrings += noveltyArrowStrings
                 retNode.comment = retNode.comment + " [%cal " + ",".join(arrowStrings) + "]"
 
-            if (len(analysisMoves) > 0) and options.diagramPattern:
+            if enableDiagram and options.diagramPattern:
                 writeDiagram(options.diagramPattern, node, analysisMoves)
 
         # next mainline move
         if (len(node.variations) > 0):
             node = node.variations[0]
-            retNode = retNode.add_main_variation(move=node.move)
+
+            if retNode.has_variation(node.move):
+                retNode.promote_to_main(node.move)
+                retNode = retNode.variations[0]
+            else:
+                retNode = retNode.add_main_variation(move=node.move)
+
             if not skip:
                 summary.analyzedLineStr = ret.board().variation_san(ret.mainline_moves())
         else:
