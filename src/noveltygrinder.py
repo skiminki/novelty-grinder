@@ -338,10 +338,19 @@ class AnalysisMoveInfo:
         self.novelty = True
 
 
+class AnalysisSummaryBookStats:
+    def __init__(self, totalGames : int):
+        self.totalGames = totalGames
+
+
 class AnalysisSummary:
     def __init__(self):
         self.surpriseMoves = dict()
+        self.bookStats : dict[int, AnalysisSummaryBookStats] = dict()
         self.analyzedLineStr = ""
+
+    def addBookStats(self, ply : int, stats : AnalysisSummaryBookStats):
+        self.bookStats[ply] = stats
 
     def addSurpriseMove(self, ply, moveStr, freq, novelty):
         if ply not in self.surpriseMoves:
@@ -609,13 +618,16 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
             if totalGames < options.bookCutoff:
                 stopAnalysis = True
 
+            # store number of games to summary
+            summary.addBookStats(curBoard.ply(), AnalysisSummaryBookStats(totalGames))
+
             # annotate number of book entries for this position
-            retNode.comment = retNode.comment + " N=" + str(totalGames)
+            retNode.comment = retNode.comment + f" N={totalGames}"
 
             # go through reported book moves, filter out popular moves
             analysisMoves = filterOutPopularMovesAddFreq(curBoard, analysisMoves, openingStats, gamesThreshold, totalGames)
 
-            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}\n")
+            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}; book_N={totalGames}\n")
 
             # double-check the suggestions
             analysisMoves = engineAnalysisDoubleCheck(curBoard, game, engine, options, analysisMoves)
@@ -697,6 +709,8 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
 
             for moveDesc in summary.surpriseMoves[ply]:
                 sys.stderr.write(f"{moveNumStr} {moveDesc}\n")
+
+            sys.stderr.write(f"(N={summary.bookStats[ply].totalGames})\n")
 
         sys.stderr.write("\n==================================\n")
 
