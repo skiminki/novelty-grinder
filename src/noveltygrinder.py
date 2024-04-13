@@ -529,14 +529,33 @@ def writeDiagram(diagramPattern : str, curNode : chess.pgn.GameNode, analysisMov
 
     unpopularArrows : list[chess.svg.Arrow] = list()
     noveltyArrows : list[chess.svg.Arrow] = list()
+    primaryInputMoveDrawn = False
 
     for am in analysisMoves:
+        if not (am.strongMove and am.unpopularMove):
+            continue
+
+        primaryInputMove = False
+
+        if (len(curNode.variations) > 0):
+            if am.move == curNode.variations[0].move:
+                primaryInputMove = True
+                primaryInputMoveDrawn = True
+
         if am.novelty:
-            noveltyArrows.append(
-                chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#ff0000c0"))
+            if primaryInputMove:
+                noveltyArrows.append(
+                    chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#ffa0a0d0"))
+            else:
+                noveltyArrows.append(
+                    chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#ff0000c0"))
         else:
-            unpopularArrows.append(
-                chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#00ff00c0"))
+            if primaryInputMove:
+                unpopularArrows.append(
+                    chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#a0ffa0d0"))
+            else:
+                unpopularArrows.append(
+                    chess.svg.Arrow(am.move.from_square, am.move.to_square, color="#00ff00c0"))
 
     allArrows : list[chess.svg.Arrow] = list()
 
@@ -545,7 +564,7 @@ def writeDiagram(diagramPattern : str, curNode : chess.pgn.GameNode, analysisMov
             chess.svg.Arrow(curNode.move.from_square, curNode.move.to_square, color="#2020b060")
         )
 
-    if (len(curNode.variations) > 0):
+    if (len(curNode.variations) > 0) and (not primaryInputMoveDrawn):
         nextNode = curNode.variations[0]
         allArrows.append(
             chess.svg.Arrow(nextNode.move.from_square, nextNode.move.to_square, color="#40404060")
