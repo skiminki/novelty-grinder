@@ -20,6 +20,8 @@ from optparse import OptionParser
 from pathlib import Path
 from typing import Iterable
 import berserk
+import berserk.clients.opening_explorer
+import berserk.exceptions
 import chess
 import chess.engine
 import chess.pgn
@@ -28,6 +30,7 @@ import datetime
 import json
 import logging
 import sys
+import time
 import traceback
 
 VERSION="0.1-dev"
@@ -514,7 +517,23 @@ def analysisMoveListToString(analysisMoves, board):
     return " ".join(moveStrList)
 
 
-def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
+def getOpeningStats(openingExplorer : berserk.clients.opening_explorer.OpeningExplorer, fen : str):
+
+    i = 0
+    while True:
+        try:
+            i = i + 1
+            return openingExplorer.get_masters_games(fen, top_games=0, moves=30)
+        except berserk.exceptions.ApiError as ex:
+            sys.stderr.write(f"Lichess DB query error: {ex}\n")
+            if (i < 3):
+                sleepSecs = 1 + i * 2
+                sys.stderr.write(f"Retrying after {sleepSecs} secs...\n")
+                time.sleep(sleepSecs)
+            else:
+                raise
+
+def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : berserk.clients.opening_explorer.OpeningExplorer):
     sys.stderr.write(f"Analyzing game {num}\n")
 
     ret = chess.pgn.Game.from_board(game.board())
@@ -576,7 +595,9 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
 
             # do a lichess query on the position
             fen = curBoard.fen()
-            openingStats = openingExplorer.get_masters_games(fen, top_games=0, moves=30)
+
+            # get opening stats from Lichess
+            openingStats = getOpeningStats(openingExplorer, fen)
 
             # compute book opening thresholds
             totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
