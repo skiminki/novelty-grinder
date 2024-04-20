@@ -29,11 +29,19 @@ import chess.svg
 import datetime
 import json
 import logging
+import os
 import sys
 import time
 import traceback
 
 VERSION="0.1-dev"
+
+
+def getDefaultEngineConfPath():
+    if os.name == 'nt':
+        return str(Path.home() / "AppData" / "Roaming" / "Nibbler" / "engines.json")
+    else:
+        return str(Path.home() / ".config" / "Nibbler" / "engines.json")
 
 
 def enable_debug_logging(option, opt, value, parser):
@@ -57,7 +65,7 @@ Annotated PGN is written in stdout.''')
         help="Nibbler engines.json file [default: %default]",
         metavar="FILE",
         type="string",
-        default=str(Path.home() / ".config" / "Nibbler" / "engines.json"))
+        default=getDefaultEngineConfPath())
 
     parser.add_option(
         "-T", "--lichess-token-file", dest="lichessTokenFile",
@@ -298,6 +306,7 @@ def initializeEngines(options):
     whiteEngine = None
     blackEngine = None
 
+    sys.stderr.write(f"Engine configuration file: {options.enginesJsonPath}\n")
     with open(options.enginesJsonPath) as f:
         engineConfigs = json.load(f)
 
