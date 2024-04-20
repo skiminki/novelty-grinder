@@ -625,6 +625,133 @@ def getOpeningStats(openingExplorer : berserk.clients.opening_explorer.OpeningEx
             else:
                 raise
 
+
+# returns True if analysis should continue (i.e., no cut-off)
+def analyzePosition(
+        options,
+        engine,
+        openingExplorer : berserk.clients.opening_explorer.OpeningExplorer,
+        game : chess.pgn.Game,
+        curBoard : chess.Board,
+        node,    # in:     game node
+        retNode, # in-out: analysis variations and comments to be added here
+        summary : AnalysisSummary):
+
+    stopAnalysis = False
+
+    sys.stderr.write(f"- move {currentMoveNumStr(curBoard)}\n")
+
+    analysisMoves, evalThresholdCp = engineAnalysis(curBoard, game, engine, options)
+
+    if options.includeInput:
+        analysisMoves = forceAddInputMoves(analysisMoves, node, curBoard)
+
+    # filter out moves that don't have big enough score
+    analysisMoves = pruneWeakMoves(
+        analysisMoves,
+        evalThresholdCp - options.initialEvalMarginCp)
+
+    if len(analysisMoves) > 0:
+        if retNode.comment:
+            retNode.comment += '; '
+        else:
+            retNode.comment = ''
+
+        retNode.comment += f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
+
+    sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, curBoard)}\n")
+
+    if not options.includeInput:
+        analysisMoves = filterOutVariations(analysisMoves, node)
+
+    # do a lichess query on the position
+    fen = curBoard.fen()
+
+    # get opening stats from Lichess
+    openingStats = getOpeningStats(openingExplorer, fen)
+
+    # compute book opening thresholds
+    totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
+    gamesThreshold = totalGames * options.rarityThresholdFreq
+    if gamesThreshold < options.rarityThresholdCount:
+        gamesThreshold = options.rarityThresholdCount
+
+    # out of book? stop analyzing after this move
+    if totalGames < options.bookCutoff:
+        stopAnalysis = True
+
+    # store number of games to summary
+    summary.addBookStats(curBoard.ply(), AnalysisSummaryBookStats(totalGames))
+
+    # annotate number of book entries for this position
+    retNode.comment = retNode.comment + f" N={totalGames}"
+
+    # go through reported book moves, filter out popular moves
+    analysisMoves = filterOutPopularMovesAddFreq(curBoard, analysisMoves, openingStats, gamesThreshold, totalGames)
+
+    sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}; book_N={totalGames}\n")
+
+    # double-check the suggestions
+    analysisMoves = engineAnalysisDoubleCheck(curBoard, game, engine, options, analysisMoves)
+
+    # filter out moves that don't have big enough score
+    analysisMoves = pruneWeakMoves(analysisMoves, evalThresholdCp)
+
+    sys.stderr.write(f"  - moves after final analysis: {analysisMoveListToString(analysisMoves, curBoard)}\n")
+
+    # PGN arrow strings sets
+    unpopularArrowStrings = set()
+    noveltyArrowStrings = set()
+
+    # Add variations from unpopular engine-approved moves
+    enableDiagram = False
+    for m in analysisMoves:
+        comment = f"Eval={scoreToString(m.evalCp, node.turn())}"
+        nags = set()
+        if m.novelty:
+            # Note: 146 is numeric annotation glyph for novelty
+            # See https://en.wikipedia.org/wiki/Numeric_Annotation_Glyphs
+            nags.add(146)
+            if m.strongMove:
+                noveltyArrowStrings.add(f"R{m.move.uci()}")
+        else:
+            comment = comment + f" Popularity={m.freq * 100:.2f}%"
+            if m.unpopularMove and m.strongMove:
+                unpopularArrowStrings.add(f"G{m.move.uci()}")
+
+        if m.inputMove and m.unpopularMove and m.strongMove:
+            nags.add(1)  # add '!'
+
+        retNode.add_variation(
+            m.move,
+            comment = comment,
+            nags = nags)
+
+        if m.unpopularMove and m.strongMove:
+            enableDiagram = True
+            summary.addSurpriseMove(
+                curBoard.ply(),
+                curBoard.san(m.move),
+                m.freq,
+                m.novelty,
+                m.inputMove)
+
+    # Add the arrow strings. Note: we'll add the arrows for
+    # unpopular moves before novelties. Some GUIs (e.g.,
+    # chessx) draw the arrows in order, and we want to
+    # highlight the novelties in case the arrows overlap.
+    if options.arrows and ((len(unpopularArrowStrings) + len(noveltyArrowStrings) > 0)):
+        arrowStrings = [ ]
+        arrowStrings += unpopularArrowStrings
+        arrowStrings += noveltyArrowStrings
+        retNode.comment = retNode.comment + " [%cal " + ",".join(arrowStrings) + "]"
+
+    if enableDiagram and options.diagramPattern:
+        writeDiagram(options.diagramPattern, node, analysisMoves)
+
+    return not stopAnalysis
+
+
 def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : berserk.clients.opening_explorer.OpeningExplorer):
     sys.stderr.write(f"Analyzing game {num}\n")
 
@@ -669,115 +796,15 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
             engine = blackEngine
 
         if (not skip) and (engine is not None):
-            sys.stderr.write(f"- move {currentMoveNumStr(curBoard)}\n")
-
-            analysisMoves, evalThresholdCp = engineAnalysis(curBoard, game, engine, options)
-
-            if options.includeInput:
-                analysisMoves = forceAddInputMoves(analysisMoves, node, curBoard)
-
-            # filter out moves that don't have big enough score
-            analysisMoves = pruneWeakMoves(
-                analysisMoves,
-                evalThresholdCp - options.initialEvalMarginCp)
-
-            if len(analysisMoves) > 0:
-                if retNode.comment:
-                    retNode.comment += '; '
-                else:
-                    retNode.comment = ''
-
-                retNode.comment += f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
-
-            sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, curBoard)}\n")
-
-            if not options.includeInput:
-                analysisMoves = filterOutVariations(analysisMoves, node)
-
-            # do a lichess query on the position
-            fen = curBoard.fen()
-
-            # get opening stats from Lichess
-            openingStats = getOpeningStats(openingExplorer, fen)
-
-            # compute book opening thresholds
-            totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
-            gamesThreshold = totalGames * options.rarityThresholdFreq
-            if gamesThreshold < options.rarityThresholdCount:
-                gamesThreshold = options.rarityThresholdCount
-
-            # out of book? stop analyzing after this move
-            if totalGames < options.bookCutoff:
-                stopAnalysis = True
-
-            # store number of games to summary
-            summary.addBookStats(curBoard.ply(), AnalysisSummaryBookStats(totalGames))
-
-            # annotate number of book entries for this position
-            retNode.comment = retNode.comment + f" N={totalGames}"
-
-            # go through reported book moves, filter out popular moves
-            analysisMoves = filterOutPopularMovesAddFreq(curBoard, analysisMoves, openingStats, gamesThreshold, totalGames)
-
-            sys.stderr.write(f"  - moves after book and input move reduction: {analysisMoveListToString(analysisMoves, curBoard)}; book_N={totalGames}\n")
-
-            # double-check the suggestions
-            analysisMoves = engineAnalysisDoubleCheck(curBoard, game, engine, options, analysisMoves)
-
-            # filter out moves that don't have big enough score
-            analysisMoves = pruneWeakMoves(analysisMoves, evalThresholdCp)
-
-            sys.stderr.write(f"  - moves after final analysis: {analysisMoveListToString(analysisMoves, curBoard)}\n")
-
-            # PGN arrow strings sets
-            unpopularArrowStrings = set()
-            noveltyArrowStrings = set()
-
-            # Add variations from unpopular engine-approved moves
-            enableDiagram = False
-            for m in analysisMoves:
-                comment = f"Eval={scoreToString(m.evalCp, node.turn())}"
-                nags = set()
-                if m.novelty:
-                    # Note: 146 is numeric annotation glyph for novelty
-                    # See https://en.wikipedia.org/wiki/Numeric_Annotation_Glyphs
-                    nags.add(146)
-                    if m.strongMove:
-                        noveltyArrowStrings.add(f"R{m.move.uci()}")
-                else:
-                    comment = comment + f" Popularity={m.freq * 100:.2f}%"
-                    if m.unpopularMove and m.strongMove:
-                        unpopularArrowStrings.add(f"G{m.move.uci()}")
-
-                if m.inputMove and m.unpopularMove and m.strongMove:
-                    nags.add(1)  # add '!'
-
-                retNode.add_variation(
-                    m.move,
-                    comment = comment,
-                    nags = nags)
-
-                if m.unpopularMove and m.strongMove:
-                    enableDiagram = True
-                    summary.addSurpriseMove(
-                        curBoard.ply(),
-                        curBoard.san(m.move),
-                        m.freq,
-                        m.novelty,
-                        m.inputMove)
-
-            # Add the arrow strings. Note: we'll add the arrows for
-            # unpopular moves before novelties. Some GUIs (e.g.,
-            # chessx) draw the arrows in order, and we want to
-            # highlight the novelties in case the arrows overlap.
-            if options.arrows and ((len(unpopularArrowStrings) + len(noveltyArrowStrings) > 0)):
-                arrowStrings = [ ]
-                arrowStrings += unpopularArrowStrings
-                arrowStrings += noveltyArrowStrings
-                retNode.comment = retNode.comment + " [%cal " + ",".join(arrowStrings) + "]"
-
-            if enableDiagram and options.diagramPattern:
-                writeDiagram(options.diagramPattern, node, analysisMoves)
+            stopAnalysis = not analyzePosition(
+                options,
+                engine,
+                openingExplorer,
+                game,
+                curBoard,
+                node,
+                retNode,
+                summary)
 
         # next mainline move
         if (len(node.variations) > 0):
