@@ -609,7 +609,10 @@ def analysisMoveListToString(analysisMoves, board):
     return " ".join(moveStrList)
 
 
-def getOpeningStats(openingExplorer : berserk.clients.opening_explorer.OpeningExplorer, fen : str):
+def getOpeningStats(openingExplorer : berserk.clients.opening_explorer.OpeningExplorer, curBoard : chess.Board):
+
+    # get opening stats from Lichess
+    fen = curBoard.fen()
 
     i = 0
     while True:
@@ -664,11 +667,8 @@ def analyzePosition(
     if not options.includeInput:
         analysisMoves = filterOutVariations(analysisMoves, node)
 
-    # do a lichess query on the position
-    fen = curBoard.fen()
-
     # get opening stats from Lichess
-    openingStats = getOpeningStats(openingExplorer, fen)
+    openingStats = getOpeningStats(openingExplorer, curBoard)
 
     # compute book opening thresholds
     totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
