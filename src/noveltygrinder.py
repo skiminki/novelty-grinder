@@ -640,9 +640,24 @@ def analyzePosition(
         retNode, # in-out: analysis variations and comments to be added here
         summary : AnalysisSummary):
 
-    stopAnalysis = False
-
     sys.stderr.write(f"- move {currentMoveNumStr(curBoard)}\n")
+
+    # do a lichess query on the position
+    openingStats = getOpeningStats(openingExplorer, curBoard)
+
+    # compute book opening thresholds
+    totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
+    gamesThreshold = totalGames * options.rarityThresholdFreq
+    if gamesThreshold < options.rarityThresholdCount:
+        gamesThreshold = options.rarityThresholdCount
+
+    # annotate number of book entries for this position
+    retNode.comment += f"N={totalGames}"
+
+    # book cut-off?
+    if totalGames < options.bookCutoff:
+        sys.stderr.write(f"  - book cut-off triggered: book_N={totalGames}\n")
+        return False
 
     analysisMoves, evalThresholdCp = engineAnalysis(curBoard, game, engine, options)
 
@@ -655,36 +670,15 @@ def analyzePosition(
         evalThresholdCp - options.initialEvalMarginCp)
 
     if len(analysisMoves) > 0:
-        if retNode.comment:
-            retNode.comment += '; '
-        else:
-            retNode.comment = ''
-
-        retNode.comment += f"Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
+        retNode.comment += f" Eval={scoreToString(analysisMoves[0].evalCp, node.turn())}"
 
     sys.stderr.write(f"  - initial analysis: candidate moves: {analysisMoveListToString(analysisMoves, curBoard)}\n")
 
     if not options.includeInput:
         analysisMoves = filterOutVariations(analysisMoves, node)
 
-    # get opening stats from Lichess
-    openingStats = getOpeningStats(openingExplorer, curBoard)
-
-    # compute book opening thresholds
-    totalGames = openingStats['white'] + openingStats['draws'] + openingStats['black']
-    gamesThreshold = totalGames * options.rarityThresholdFreq
-    if gamesThreshold < options.rarityThresholdCount:
-        gamesThreshold = options.rarityThresholdCount
-
-    # out of book? stop analyzing after this move
-    if totalGames < options.bookCutoff:
-        stopAnalysis = True
-
     # store number of games to summary
     summary.addBookStats(curBoard.ply(), AnalysisSummaryBookStats(totalGames))
-
-    # annotate number of book entries for this position
-    retNode.comment = retNode.comment + f" N={totalGames}"
 
     # go through reported book moves, filter out popular moves
     analysisMoves = filterOutPopularMovesAddFreq(curBoard, analysisMoves, openingStats, gamesThreshold, totalGames)
@@ -749,7 +743,7 @@ def analyzePosition(
     if enableDiagram and options.diagramPattern:
         writeDiagram(options.diagramPattern, node, analysisMoves)
 
-    return not stopAnalysis
+    return True
 
 
 def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : berserk.clients.opening_explorer.OpeningExplorer):
@@ -786,6 +780,11 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
         engine = None
         skip = stopAnalysis
         curBoard = node.board()
+
+        if not retNode.comment:
+            retNode.comment = ''
+        else:
+            retNode.comment += '; '
 
         if curBoard.fullmove_number < options.firstMove:
             skip = True
