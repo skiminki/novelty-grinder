@@ -70,8 +70,3 @@ the best winning chances. A bit of experimentation with Nibbler is
 recommended to find suitable settings. See
 https://lczero.org/blog/2024/03/gm-matthew-sadler-on-wdl-contempt/ for
 further information.
-
-**Windows users!** [Issue 3](https://github.com/skiminki/novelty-grinder/issues/3)
-tracks an issue related to running the Novelty Grinder in
-Windows. Until the issue is fixed, there is a workaround:
-https://matthewsadler.me.uk/openings/the-mrbdzz-novelty-grinder/
