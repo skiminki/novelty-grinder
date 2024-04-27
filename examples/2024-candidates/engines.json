@@ -1,0 +1,77 @@
+{
+	"/usr/local/bin/lc0-no-contempt": {
+		"args": [],
+		"options": {
+			"WeightsFile": "/projects/lc0-nets/current",
+			"Threads": 2,
+			"Backend": "cuda-fp16",
+			"MinibatchSize": 128,
+			"SyzygyPath": "/data/syzygy",
+			"NNCacheSize": 5000000
+		}
+	},
+	"/usr/local/bin/lc0-contempt-white-150": {
+		"args": [],
+		"options": {
+			"WeightsFile": "/projects/lc0-nets/current",
+			"Threads": 2,
+			"Backend": "cuda-fp16",
+			"MinibatchSize": 128,
+			"SyzygyPath": "/data/syzygy",
+			"NNCacheSize": 5000000,
+			"ContemptMode": "white_side_analysis",
+			"Contempt": 150,
+			"WDLCalibrationElo": 2900,
+			"WDLEvalObjectivity": 0,
+			"WDLDrawRateReference": 0.62
+		}
+	},
+	"/usr/local/bin/lc0-contempt-white-250": {
+		"args": [],
+		"options": {
+			"WeightsFile": "/projects/lc0-nets/current",
+			"Threads": 2,
+			"Backend": "cuda-fp16",
+			"MinibatchSize": 128,
+			"SyzygyPath": "/data/syzygy",
+			"NNCacheSize": 5000000,
+			"ContemptMode": "white_side_analysis",
+			"Contempt": 250,
+			"WDLCalibrationElo": 2900,
+			"WDLEvalObjectivity": 0,
+			"WDLDrawRateReference": 0.62
+		}
+	},
+	"/usr/local/bin/lc0-contempt-black-150": {
+		"args": [],
+		"options": {
+			"WeightsFile": "/projects/lc0-nets/current",
+			"Threads": 2,
+			"Backend": "cuda-fp16",
+			"MinibatchSize": 128,
+			"SyzygyPath": "/data/syzygy",
+			"NNCacheSize": 5000000,
+			"ContemptMode": "black_side_analysis",
+			"Contempt": 150,
+			"WDLCalibrationElo": 2900,
+			"WDLEvalObjectivity": 0,
+			"WDLDrawRateReference": 0.62
+		}
+	},
+	"/usr/local/bin/lc0-contempt-black-250": {
+		"args": [],
+		"options": {
+			"WeightsFile": "/projects/lc0-nets/current",
+			"Threads": 2,
+			"Backend": "cuda-fp16",
+			"MinibatchSize": 128,
+			"SyzygyPath": "/data/syzygy",
+			"NNCacheSize": 5000000,
+			"ContemptMode": "black_side_analysis",
+			"Contempt": 250,
+			"WDLCalibrationElo": 2900,
+			"WDLEvalObjectivity": 0,
+			"WDLDrawRateReference": 0.62
+		}
+	}
+}
