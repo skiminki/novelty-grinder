@@ -52,7 +52,7 @@ def processarguments():
         version="novelty-grinder " + VERSION,
         usage = 'usage: novelty-grinder [options] FILE.pgn',
         description = '''The Grand Novelty Grinder
-searches for suprise moves and novelties with Lc0 and Lichess.''',
+searches for surprise moves and novelties with Lc0 and Lichess.''',
         epilog='''Quick instructions:
 (1) Configure Lc0 for Nibbler. When using contempt, configure both colors
 separately.
@@ -202,7 +202,7 @@ Annotated PGN is written in stdout.''')
         parser.error('--engines-json must be especified')
 
     if not (options.engine or options.whiteEngine or options.blackEngine):
-        parser.error('An analysis engine must be specified')
+        parser.error('An analysis engine must be specified. Try -h for help.')
 
     if len(args) == 0:
         parser.error('No input PGN was specified')
