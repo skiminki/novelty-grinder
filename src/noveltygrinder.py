@@ -148,6 +148,13 @@ Annotated PGN is written in stdout.''')
         action="store_true")
 
     parser.add_option(
+        "",  "--pv-plies", dest="pvPlies",
+        help="Number of PV plies (half-moves) to add in PGN variations for surprise moves. [default: %default]",
+        type="int",
+        default=1,
+        metavar='NUM')
+
+    parser.add_option(
         "",  "--debug",
         help="Enable debug mode",
         action="callback",
@@ -213,6 +220,9 @@ Annotated PGN is written in stdout.''')
     # check that diagram pattern is parseable
     if options.diagramPattern is not None:
         parseDiagramPattern(options.diagramPattern)
+
+    if options.pvPlies < 1:
+        parser.error('--pvPlies: Must be at least 1')
 
     return (options, args)
 
@@ -344,8 +354,8 @@ def scoreToString(cp, turn):
 
 
 class AnalysisMoveInfo:
-    def __init__(self, move, evalCp, nodes):
-        self.move = move
+    def __init__(self, evalCp, nodes, pv):
+        self.move = pv[0]
         self.evalCp = evalCp
         self.nodes = nodes
         self.freq = 0
@@ -353,6 +363,7 @@ class AnalysisMoveInfo:
         self.inputMove = False
         self.strongMove = True
         self.unpopularMove = True
+        self.pv = pv
 
 
 class AnalysisSummaryBookStats:
@@ -369,11 +380,11 @@ class AnalysisSummary:
     def addBookStats(self, ply : int, stats : AnalysisSummaryBookStats):
         self.bookStats[ply] = stats
 
-    def addSurpriseMove(self, ply, moveStr, freq, novelty, inputMove):
-        if ply not in self.surpriseMoves:
-            self.surpriseMoves[ply] = list()
+    def addSurpriseMove(self, curBoard, pv, freq, novelty, inputMove):
+        if curBoard.ply() not in self.surpriseMoves:
+            self.surpriseMoves[curBoard.ply()] = list()
 
-        summaryStr = moveStr
+        summaryStr = curBoard.variation_san(pv[0:1])
 
         if inputMove:
             summaryStr += '!'
@@ -383,7 +394,13 @@ class AnalysisSummary:
         else:
             summaryStr += f" Popularity={100 * freq:.2f}%"
 
-        self.surpriseMoves[ply].append(summaryStr)
+        if len(pv) > 1:
+            curBoard.push(pv[0])
+            summaryStr += ' '
+            summaryStr += curBoard.variation_san(pv[1:])
+            curBoard.pop()
+
+        self.surpriseMoves[curBoard.ply()].append(summaryStr)
 
 
 def currentMoveNumStr(board):
@@ -406,9 +423,9 @@ def engineAnalysis(board, game, engine, options):
         if ('score' in i) and ('pv' in i) and (len(i['pv']) > 0):
             analysisMoves.append(
                 AnalysisMoveInfo(
-                    i['pv'][0],
                     i['score'].relative.score(mate_score=1000000),
-                    i['nodes']))
+                    i['nodes'],
+                    i['pv']))
 
     # engine produced any moves?
     if len(analysisMoves) == 0:
@@ -424,9 +441,9 @@ def forceAddInputMoves(analysisMoves, node, curBoard):
     ret = [ ]
     for v in node.variations:
         am = AnalysisMoveInfo(
-                v.move,
                 0,
-                0)
+                0,
+                [ v.move ])
         am.inputMove = True
         ret.append(am)
     numInputs = len(ret)
@@ -477,6 +494,7 @@ def engineAnalysisDoubleCheck(board, game, engine, options, analysisMoves):
             am.move = info[0]['pv'][0]
             am.nodes = info[0]['nodes']
             am.evalCp = info[0]['score'].relative.score(mate_score=1000000)
+            am.pv = info[0]['pv']
 
         ret.append(am)
 
@@ -725,16 +743,25 @@ def analyzePosition(
         if m.inputMove and m.unpopularMove and m.strongMove:
             nags.add(1)  # add '!'
 
-        retNode.add_variation(
+        varNode = retNode.add_variation(
             m.move,
             comment = comment,
             nags = nags)
 
+        if (not m.inputMove) and (options.pvPlies > 1):
+            varNode.add_line(m.pv[1:options.pvPlies])
+
         if m.unpopularMove and m.strongMove:
             enableDiagram = True
+            if len(varNode.variations) > 0:
+                pvMoves = [varNode.move]
+                pvMoves.extend(varNode.mainline_moves())
+            else:
+                pvMoves = [varNode.move]
+
             summary.addSurpriseMove(
-                curBoard.ply(),
-                curBoard.san(m.move),
+                curBoard,
+                pvMoves,
                 m.freq,
                 m.novelty,
                 m.inputMove)
@@ -843,14 +870,8 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer : 
         for ply in summary.surpriseMoves:
             sys.stderr.write("\n")
 
-            moveNumStr = str(1 + (ply // 2))
-            if ply % 2 == 0:
-                moveNumStr = moveNumStr + "."
-            else:
-                moveNumStr = moveNumStr + "..."
-
             for moveDesc in summary.surpriseMoves[ply]:
-                sys.stderr.write(f"{moveNumStr} {moveDesc}\n")
+                sys.stderr.write(f"{moveDesc}\n")
 
             sys.stderr.write(f"(N={summary.bookStats[ply].totalGames})\n")
 
