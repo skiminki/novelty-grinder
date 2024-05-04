@@ -70,3 +70,8 @@ the best winning chances. A bit of experimentation with Nibbler is
 recommended to find suitable settings. See
 https://lczero.org/blog/2024/03/gm-matthew-sadler-on-wdl-contempt/ for
 further information.
+
+
+Analysis examples
+-----------------
+- [2024 FIDE Candidates (Open section)](https://github.com/skiminki/novelty-grinder/releases/tag/v0.1-candidates)
