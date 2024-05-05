@@ -385,6 +385,7 @@ class AnalysisSummary:
             self.surpriseMoves[curBoard.ply()] = list()
 
         summaryStr = curBoard.variation_san(pv[0:1])
+        forceMoveNumber = False
 
         if inputMove:
             summaryStr += '!'
@@ -393,11 +394,30 @@ class AnalysisSummary:
             summaryStr += 'N'
         else:
             summaryStr += f" Popularity={100 * freq:.2f}%"
+            forceMoveNumber = True
 
-        if len(pv) > 1:
-            curBoard.push(pv[0])
+        stackMoves = 0
+        remainingMoves = pv # remaining moves including the previous moves (for stack pushes)
+
+        # print first remaining move without move number?
+        if (len(remainingMoves) > 1) and (curBoard.turn == chess.WHITE) and (not forceMoveNumber):
+
             summaryStr += ' '
-            summaryStr += curBoard.variation_san(pv[1:])
+            curBoard.push(remainingMoves[0])
+            stackMoves += 1
+
+            summaryStr += curBoard.san(remainingMoves[1])
+            remainingMoves = remainingMoves[1:]
+
+        # still moves remaining to print?
+        if len(remainingMoves) > 1:
+            summaryStr += ' '
+            curBoard.push(remainingMoves[0])
+            stackMoves += 1
+
+            summaryStr += curBoard.variation_san(remainingMoves[1:])
+
+        for i in range(0, stackMoves):
             curBoard.pop()
 
         self.surpriseMoves[curBoard.ply()].append(summaryStr)
