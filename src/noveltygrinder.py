@@ -308,7 +308,7 @@ def getEngineConf(engineConfigs, engineName):
     if fullName is None:
         raise KeyError(f"Engine not found: '{engineName}'")
 
-    return engineConfigs[fullName]
+    return fullName, engineConfigs[fullName]
 
 
 def initializeEngines(options):
@@ -321,17 +321,17 @@ def initializeEngines(options):
         engineConfigs = json.load(f)
 
     if options.engine:
-        conf = getEngineConf(engineConfigs, options.engine)
-        whiteEngine = initializeSingleEngine(options.engine, conf)
+        fullPath, conf = getEngineConf(engineConfigs, options.engine)
+        whiteEngine = initializeSingleEngine(fullPath, conf)
         blackEngine = whiteEngine
 
     if options.whiteEngine:
-        conf = getEngineConf(engineConfigs, options.whiteEngine)
-        whiteEngine = initializeSingleEngine(options.whiteEngine, conf)
+        fullPath, conf = getEngineConf(engineConfigs, options.whiteEngine)
+        whiteEngine = initializeSingleEngine(fullPath, conf)
 
     if options.blackEngine:
-        conf = getEngineConf(engineConfigs, options.blackEngine)
-        blackEngine = initializeSingleEngine(options.blackEngine, conf)
+        fullPath, conf = getEngineConf(engineConfigs, options.blackEngine)
+        blackEngine = initializeSingleEngine(fullPath, conf)
 
     return whiteEngine, blackEngine
 
