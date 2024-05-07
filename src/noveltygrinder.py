@@ -34,7 +34,7 @@ import sys
 import time
 import traceback
 
-VERSION="0.1-dev"
+VERSION="0.1.0"
 
 
 def getDefaultEngineConfPath():
