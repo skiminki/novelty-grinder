@@ -1,5 +1,5 @@
 {
-	"lc0": {
+	"/usr/local/bin/lc0": {
 		"args": [],
 		"options": {
 			"WeightsFile": "/data/lc0-nets/bt4-current",
@@ -10,7 +10,7 @@
 			"NNCacheSize": 5000000
 		}
 	},
-	"lc0-contempt-white-150": {
+	"/usr/local/bin/lc0-contempt-white-150": {
 		"args": [],
 		"options": {
 			"WeightsFile": "/data/lc0-nets/bt4-current",
@@ -26,7 +26,7 @@
 			"WDLDrawRateReference": 0.62
 		}
 	},
-	"lc0-contempt-black-150": {
+	"/usr/local/bin/lc0-contempt-black-150": {
 		"args": [],
 		"options": {
 			"WeightsFile": "/data/lc0-nets/bt4-current",
